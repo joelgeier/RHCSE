@@ -1,43 +1,93 @@
-version: "3.8"
+version: '3.8'
 
 services:
-  semaphore-db:
+
+  # --------------------------------------------------
+  # MySQL Database Service
+  # --------------------------------------------------
+  mysql:
     image: mysql:8.0
-    container_name: semaphore-db
+    container_name: semaphore-mysql
+
+    # Always restart unless manually stopped
     restart: unless-stopped
+
     environment:
+      # Root password for MySQL (change in production)
       MYSQL_ROOT_PASSWORD: semaphore_root_pass
+
+      # Database that Semaphore will use
       MYSQL_DATABASE: semaphore
+
+      # Application user for Semaphore
       MYSQL_USER: semaphore
       MYSQL_PASSWORD: semaphore_pass
-    volumes:
-      - /share/Container/semaphore-mysql:/var/lib/mysql
 
+    # Use Docker-managed volume (avoids QNAP filesystem issues)
+    volumes:
+      - mysql_data:/var/lib/mysql
+
+    networks:
+      - semaphore-net
+
+
+  # --------------------------------------------------
+  # Semaphore (Ansible UI) Service
+  # --------------------------------------------------
   semaphore:
     image: semaphoreui/semaphore:latest
     container_name: semaphore
+
     restart: unless-stopped
-    depends_on:
-      - semaphore-db
+
+    # Expose container port 3000 to host port 3001
+    # Change 3001 if needed
     ports:
-      - "3001:3000"   # changed from 3000 to avoid conflict
+      - "3001:3000"
+
     environment:
+      # -------------------------------
+      # Database Configuration
+      # -------------------------------
+      SEMAPHORE_DB_DIALECT: mysql
+      SEMAPHORE_DB_HOST: mysql          # must match service name above
+      SEMAPHORE_DB_NAME: semaphore
       SEMAPHORE_DB_USER: semaphore
       SEMAPHORE_DB_PASS: semaphore_pass
-      SEMAPHORE_DB_HOST: semaphore-db
-      SEMAPHORE_DB_PORT: 3306
-      SEMAPHORE_DB_DIALECT: mysql
-      SEMAPHORE_DB: semaphore
 
-      SEMAPHORE_PLAYBOOK_PATH: /tmp/semaphore/playbooks
-
-      # 👇 FIXED ADMIN CONFIG
+      # -------------------------------
+      # Initial Admin User
+      # (only used on first startup)
+      # -------------------------------
       SEMAPHORE_ADMIN: admin
       SEMAPHORE_ADMIN_PASSWORD: admin
-      SEMAPHORE_ADMIN_NAME: admin
-      SEMAPHORE_ADMIN_EMAIL: admin@example.com
+      SEMAPHORE_ADMIN_NAME: Admin
+      SEMAPHORE_ADMIN_EMAIL: admin@localhost
 
-      SEMAPHORE_ACCESS_KEY_ENCRYPTION: "change_this_to_random_string"
+      # -------------------------------
+      # CRITICAL: bind to all interfaces
+      # without this, UI may not be reachable
+      # -------------------------------
+      SEMAPHORE_BIND: 0.0.0.0
 
-    volumes:
-      - /share/Container/semaphore:/var/lib/semaphore
+    # Ensure MySQL starts first
+    depends_on:
+      - mysql
+
+    networks:
+      - semaphore-net
+
+
+# --------------------------------------------------
+# Persistent Storage
+# --------------------------------------------------
+volumes:
+  # Docker-managed volume (recommended over host mounts on QNAP)
+  mysql_data:
+
+
+# --------------------------------------------------
+# Internal Network
+# --------------------------------------------------
+networks:
+  semaphore-net:
